@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Firebase Emulators
+firebase-debug.log
+firebase-debug.*.log
+emulator-ui-debug.log
+
+# Firebase Config and Service Accounts (Se você não usa variáveis de ambiente para chaves privadas)
+.firebase/
+.firebaserc
+serviceAccountKey.json
+
+# Build output
+lib/
+dist/
+
+# Node modules
+node_modules/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Firebase Cache
+.firebase_cache/
+
+# OS Specific files
+.DS_Store
+Thumbs.db
