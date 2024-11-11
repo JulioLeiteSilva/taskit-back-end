@@ -1,51 +1,12 @@
-export interface Expense {
-  exp_name: string;
-  category: string;
-  value: number;
-  date: string;
-  fixed: boolean;
-  paid: boolean;
-}
-
-export interface Income {
-  inc_name: string;
-  category: string;
-  value: number;
-  date: string;
-  fixed: boolean;
-}
-
-export interface Account {
-  id: string;
-  acc_name: string;
-  bank: string;
-  expenses: Expense[];
-  incomes: Income[];
-  balance: number;
-}
-
-export interface SubTask {
-  title: string;
-  description: string;
-  priority: number;
-  done: boolean;
-}
-
-export interface Task {
-  title: string;
-  description: string;
-  data: string;
-  priority: number;
-  subTask: SubTask[];
-  done: boolean;
-}
+import {Account} from "./accountModel";
+import {Task} from "./taskModel";
 
 export interface User {
   id: string;
   name: string;
   email: string;
   cell: string;
-  accounts: Account[];
-  categories: string[];
-  tasks: Task[];
+  accounts: Account[];// Lista de contas associadas ao usuário
+  categories: string[];// Lista de categorias personalizadas
+  tasks: Task[];// Lista de tarefas do usuário
 }
