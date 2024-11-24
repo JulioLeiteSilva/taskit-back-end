@@ -1,23 +1,23 @@
 import * as functions from "firebase-functions";
 import { firestore } from "../config/firebaseConfig";
-import { Expense } from "../models/expenseModel";
+import { Income } from "../models/incomeModel";
 import { updateAccountBalance } from "./accountController";
 import { Account } from "../models/accountModel";
 
-interface InternalCreateExpense {
+interface InternalCreateIncome {
   accountId: string;
-  expenses: Omit<Expense, "id"> | Array<Omit<Expense, "id">>;
+  incomes: Omit<Income, "id"> | Array<Omit<Income, "id">>;
 }
 
-interface InternalDeleteExpense {
+interface InternalDeleteIncome {
   accountId: string;
-  expenseId: string;
+  incomeId: string;
 }
 
-export const createExpense = async (
+export const createIncome = async (
   request:
-    | functions.https.CallableRequest<InternalCreateExpense>
-    | InternalCreateExpense,
+    | functions.https.CallableRequest<InternalCreateIncome>
+    | InternalCreateIncome,
   uidFromFunction?: string
 ) => {
   const uid =
@@ -32,21 +32,21 @@ export const createExpense = async (
     );
   }
 
-  const { accountId, expenses } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
+  const { accountId, incomes } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
 
-  if (!accountId || !expenses) {
+  if (!accountId || !incomes) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "Dados de despesa inválidos"
+      "Dados de receita inválidos"
     );
   }
 
-  const expenseArray = Array.isArray(expenses) ? expenses : [expenses];
+  const incomeArray = Array.isArray(incomes) ? incomes : [incomes];
 
-  if (expenseArray.length === 0) {
+  if (incomeArray.length === 0) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "Nenhuma despesa fornecida"
+      "Nenhuma receita fornecida"
     );
   }
 
@@ -69,28 +69,28 @@ export const createExpense = async (
       );
     }
 
-    const newExpenses = expenseArray.map((expense) => ({
-      ...expense,
+    const newIncomes = incomeArray.map((income) => ({
+      ...income,
       id: firestore.collection("users").doc().id,
     }));
 
-    let totalPaidExpenses = 0; // Acumula o valor total das despesas pagas
+    let totalPaidIncomes = 0;
     const updatedAccounts = userData.accounts.map((account: Account) => {
       if (account.id === accountId) {
-        const updatedExpenses = [...(account.expenses || []), ...newExpenses];
+        const updatedIncomes = [...(account.incomes || []), ...newIncomes];
 
-        newExpenses.forEach((expense) => {
-          if (expense.paid) {
-            totalPaidExpenses += expense.value;
+        newIncomes.forEach((income) => {
+          if (income.paid) {
+            totalPaidIncomes += income.value;
           }
         });
 
         return {
           ...account,
-          expenses: updatedExpenses,
+          incomes: updatedIncomes,
         };
       }
-      return account; // Mantém as outras contas inalteradas
+      return account;
     });
 
     if (!updatedAccounts.some((account: Account) => account.id === accountId)) {
@@ -100,31 +100,29 @@ export const createExpense = async (
       );
     }
 
-    // Atualizar o array de contas no Firestore
     await userDocRef.update({
       accounts: updatedAccounts,
     });
 
-    // Atualizar o saldo no Firestore se houver despesas pagas
-    if (totalPaidExpenses > 0) {
-      await updateAccountBalance(uid, accountId, totalPaidExpenses, "subtract");
+    if (totalPaidIncomes > 0) {
+      await updateAccountBalance(uid, accountId, totalPaidIncomes, "add");
     }
 
-    return { message: "Despesas criadas com sucesso", expenses: newExpenses };
+    return { message: "Receitas criadas com sucesso", incomes: newIncomes };
   } catch (error) {
-    console.error("Erro ao criar despesa:", error);
+    console.error("Erro ao criar receita:", error);
     throw new functions.https.HttpsError(
       "internal",
-      "Erro ao criar a despesa",
+      "Erro ao criar a receita",
       error
     );
   }
 };
 
-export const deleteExpense = async (
+export const deleteIncome = async (
   request:
-    | functions.https.CallableRequest<InternalDeleteExpense>
-    | InternalDeleteExpense, // Suporte para chamadas externas e internas
+    | functions.https.CallableRequest<InternalDeleteIncome>
+    | InternalDeleteIncome, // Suporte para chamadas externas e internas
   uidFromFunction?: string // UID opcional para chamadas internas
 ) => {
   const uid =
@@ -139,12 +137,12 @@ export const deleteExpense = async (
     );
   }
 
-  const { accountId, expenseId } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
+  const { accountId, incomeId } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
 
-  if (!accountId || !expenseId) {
+  if (!accountId || !incomeId) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "Dados inválidos fornecidos para exclusão de despesa"
+      "Dados inválidos fornecidos para exclusão de receita"
     );
   }
 
@@ -169,25 +167,26 @@ export const deleteExpense = async (
 
     const updatedAccounts = userData.accounts.map((account: Account) => {
       if (account.id === accountId) {
-        const expense = account.expenses.find(
-          (e: Expense) => e.id === expenseId
+        const income = account.incomes.find(
+          (inc: Income) => inc.id === incomeId
         );
 
-        if (!expense) {
+        if (!income) {
           throw new functions.https.HttpsError(
             "not-found",
-            "Despesa não encontrada na conta"
+            "Receita não encontrada na conta"
           );
         }
 
         // Atualiza o saldo, se necessário
-        if (expense.paid) {
-          updateAccountBalance(uid, accountId, expense.value, "add");
+        if (income.paid) {
+          updateAccountBalance(uid, accountId, income.value, "subtract");
         }
-        // Remove a despesa do array
+
+        // Remove a receita do array
         return {
           ...account,
-          expenses: account.expenses.filter((e: Expense) => e.id !== expenseId),
+          incomes: account.incomes.filter((inc: Income) => inc.id !== incomeId),
         };
       }
       return account; // Outras contas permanecem inalteradas
@@ -196,22 +195,22 @@ export const deleteExpense = async (
     // Atualizar o Firestore
     await userDocRef.update({ accounts: updatedAccounts });
 
-    return { message: "Despesa removida com sucesso" };
+    return { message: "Receita removida com sucesso" };
   } catch (error) {
-    console.error("Erro ao remover despesa:", error);
+    console.error("Erro ao remover receita:", error);
     throw new functions.https.HttpsError(
       "internal",
-      "Erro ao remover a despesa",
+      "Erro ao remover a receita",
       error
     );
   }
 };
 
-export const updateExpense = async (
+export const updateIncome = async (
   request: functions.https.CallableRequest<{
-    oldAccountId?: string; // ID da conta antiga (se a conta foi alterada)
-    newAccountId: string; // ID da conta nova (ou atual)
-    expense: Expense; // Dados atualizados da despesa
+    oldAccountId?: string;
+    newAccountId: string;
+    income: Income;
   }>
 ) => {
   if (!request.auth) {
@@ -222,40 +221,40 @@ export const updateExpense = async (
   }
 
   const uid = request.auth.uid;
-  const { oldAccountId, newAccountId, expense } = request.data;
+  const { oldAccountId, newAccountId, income } = request.data;
 
-  if (!newAccountId || !expense || !expense.id || expense.value === undefined) {
+  if (!newAccountId || !income || !income.id || income.value === undefined) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "Dados de despesa inválidos"
+      "Dados de receita inválidos"
     );
   }
 
   try {
     // Caso a conta tenha sido alterada
     if (oldAccountId && oldAccountId !== newAccountId) {
-      // 1. Deletar a despesa da conta antiga
-      await deleteExpense(
+      // 1. Deletar a receita da conta antiga
+      await deleteIncome(
         {
           accountId: oldAccountId,
-          expenseId: expense.id,
+          incomeId: income.id,
         },
         uid // Passa o UID explicitamente
       );
 
-      // 2. Criar a despesa na nova conta
-      await createExpense(
+      // 2. Criar a receita na nova conta
+      await createIncome(
         {
           accountId: newAccountId,
-          expenses: expense,
+          incomes: income,
         },
         uid // Passar o UID explicitamente
       );
 
-      return { message: "Despesa movida para outra conta com sucesso" };
+      return { message: "Receita movida para outra conta com sucesso" };
     }
 
-    // Caso a despesa permaneça na mesma conta
+    // Caso a receita permaneça na mesma conta
     const userDocRef = firestore.collection("users").doc(uid);
     const userDoc = await userDocRef.get();
 
@@ -277,38 +276,38 @@ export const updateExpense = async (
     let totalBalanceAdjustment = 0; // Para rastrear os ajustes no saldo
     let updatedAccounts = userData.accounts.map((account: Account) => {
       if (account.id === newAccountId) {
-        const existingExpenseIndex = account.expenses.findIndex(
-          (e: Expense) => e.id === expense.id
+        const existingincomeIndex = account.incomes.findIndex(
+          (inc: Income) => inc.id === income.id
         );
 
-        if (existingExpenseIndex >= 0) {
-          const oldExpense = account.expenses[existingExpenseIndex];
+        if (existingincomeIndex >= 0) {
+          const oldincome = account.incomes[existingincomeIndex];
 
           // Ajustar saldo conforme mudanças
           if (
-            oldExpense.paid !== expense.paid ||
-            oldExpense.value !== expense.value
+            oldincome.paid !== income.paid ||
+            oldincome.value !== income.value
           ) {
             // Reverter o saldo do valor antigo, se pago
-            if (oldExpense.paid) {
-              totalBalanceAdjustment += oldExpense.value;
+            if (oldincome.paid) {
+              totalBalanceAdjustment -= oldincome.value;
             }
 
             // Subtrair o novo valor, se pago
-            if (expense.paid) {
-              totalBalanceAdjustment -= expense.value;
+            if (income.paid) {
+              totalBalanceAdjustment += income.value;
             }
           }
 
-          // Atualizar a despesa no array
-          account.expenses[existingExpenseIndex] = {
-            ...oldExpense,
-            ...expense,
+          // Atualizar a receita no array
+          account.incomes[existingincomeIndex] = {
+            ...oldincome,
+            ...income,
           };
         } else {
           throw new functions.https.HttpsError(
             "not-found",
-            "Despesa não encontrada na conta"
+            "Receita não encontrada na conta"
           );
         }
 
@@ -327,24 +326,24 @@ export const updateExpense = async (
         uid,
         newAccountId,
         Math.abs(totalBalanceAdjustment),
-        totalBalanceAdjustment > 0 ? "add" : "subtract"
+        totalBalanceAdjustment < 0 ? "add" : "subtract"
       );
     }
 
-    return { message: "Despesa atualizada com sucesso" };
+    return { message: "Receita atualizada com sucesso" };
   } catch (error) {
-    console.error("Erro ao atualizar despesa:", error);
+    console.error("Erro ao atualizar receita:", error);
     throw new functions.https.HttpsError(
       "internal",
-      "Erro ao atualizar a despesa",
+      "Erro ao atualizar a receita",
       error
     );
   }
 };
 
-export const getExpense = async (
+export const getIncome = async (
   request: functions.https.CallableRequest<{
-    expenseId: string;
+    incomeId: string;
   }>
 ) => {
   if (!request.auth) {
@@ -355,12 +354,12 @@ export const getExpense = async (
   }
 
   const uid = request.auth.uid;
-  const { expenseId } = request.data;
+  const { incomeId } = request.data;
 
-  if (!expenseId) {
+  if (!incomeId) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "O ID da despesa não foi fornecido"
+      "O ID da receita não foi fornecido"
     );
   }
 
@@ -383,29 +382,29 @@ export const getExpense = async (
       );
     }
 
-    // Procurar a despesa em todas as contas
+    // Procurar a receita em todas as contas
     for (const account of userData.accounts) {
-      const expense = account.expenses.find((e: Expense) => e.id === expenseId);
-      if (expense) {
+      const income = account.incomes.find((inc: Income) => inc.id === incomeId);
+      if (income) {
         return {
-          expense,
-          accountId: account.id, // Retorna o ID da conta onde a despesa está
+          income,
+          accountId: account.id, // Retorna o ID da conta onde a receita está
         };
       }
     }
 
-    throw new functions.https.HttpsError("not-found", "Despesa não encontrada");
+    throw new functions.https.HttpsError("not-found", "Receita não encontrada");
   } catch (error) {
-    console.error("Erro ao buscar a despesa:", error);
+    console.error("Erro ao buscar a receita:", error);
     throw new functions.https.HttpsError(
       "internal",
-      "Erro ao buscar a despesa",
+      "Erro ao buscar a receita",
       error
     );
   }
 };
 
-export const getAllExpenses = async (
+export const getAllIncomes = async (
   request: functions.https.CallableRequest<null>
 ) => {
   if (!request.auth) {
@@ -436,21 +435,21 @@ export const getAllExpenses = async (
       );
     }
 
-    // Extrair todas as despesas por conta
-    const expensesByAccount = userData.accounts.map((account: Account) => ({
+    // Extrair todas as receitas por conta
+    const IncomesByAccount = userData.accounts.map((account: Account) => ({
       accountId: account.id,
       accountName: account.acc_name,
-      expenses: account.expenses || [],
+      incomes: account.incomes || [],
     }));
 
     return {
-      expensesByAccount,
+      IncomesByAccount,
     };
   } catch (error) {
-    console.error("Erro ao buscar todas as despesas:", error);
+    console.error("Erro ao buscar todas as receitas:", error);
     throw new functions.https.HttpsError(
       "internal",
-      "Erro ao buscar todas as despesas",
+      "Erro ao buscar todas as receitas",
       error
     );
   }

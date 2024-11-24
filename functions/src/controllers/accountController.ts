@@ -2,9 +2,6 @@ import * as functions from "firebase-functions";
 import { firestore } from "../config/firebaseConfig";
 import {Account} from "../models/accountModel"
 
-
-
-
 export const createAccount = async (
   request: functions.https.CallableRequest<{
     account: Omit<Account, 'id' | 'expenses' | 'incomes'>;
@@ -251,5 +248,56 @@ export const getAllAccounts = async (
   } catch (error) {
     console.error('Erro ao obter contas:', error);
     throw new functions.https.HttpsError('internal', 'Erro ao obter as contas', error);
+  }
+};
+
+export const updateAccountBalance = async (
+  uid: string,
+  accountId: string,
+  value: number,
+  operation: "add" | "subtract"
+) => {
+  try {
+    const userDocRef = firestore.collection("users").doc(uid);
+    const userDoc = await userDocRef.get();
+
+    if (!userDoc.exists) {
+      throw new Error("Usuário não encontrado");
+    }
+
+    const userData = userDoc.data();
+    if (!userData || !Array.isArray(userData.accounts)) {
+      throw new Error("Dados do usuário inválidos ou contas não encontradas");
+    }
+
+    // Atualizar o saldo da conta específica
+    const updatedAccounts = userData.accounts.map((account: any) => {
+      if (account.id === accountId) {
+        let newBalance = account.balance || 0;
+
+        // Atualiza o saldo com base na operação
+        if (operation === "add") {
+          newBalance += value;
+        } else if (operation === "subtract") {
+          newBalance -= value;
+        }
+
+        return {
+          ...account,
+          balance: newBalance, // Atualiza o saldo
+        };
+      }
+      return account; // Mantém as outras contas inalteradas
+    });
+
+    // Atualizar o documento do usuário com as contas atualizadas
+    await userDocRef.update({
+      accounts: updatedAccounts,
+    });
+
+    return { message: "Saldo atualizado com sucesso" };
+  } catch (error) {
+    console.error("Erro ao atualizar saldo da conta:", error);
+    throw new Error("Erro ao atualizar saldo");
   }
 };
