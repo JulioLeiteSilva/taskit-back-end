@@ -1,4 +1,5 @@
 export interface Expense {
+    id: string;
     exp_name: string;
     category: string;
     value: number;
