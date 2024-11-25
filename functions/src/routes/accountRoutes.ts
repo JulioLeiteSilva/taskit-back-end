@@ -21,6 +21,7 @@ import {
   getIncome,
   updateIncome,
 } from "../controllers/incomeController";
+import { createCategory, deleteCategory, getAllCategories } from "../controllers/categoryController";
 
 export const accountRoutes = {
   // Expenses
@@ -70,5 +71,15 @@ export const accountRoutes = {
   ),
   getAllAccounts: functions.https.onCall(
     async (request) => await getAllAccounts(request)
+  ),
+  //Categories
+  createCategory: functions.https.onCall(
+    async (request) => await createCategory(request)
+  ),
+  deleteCategory: functions.https.onCall(
+    async (request) => await deleteCategory(request)
+  ),
+  getAllCategories: functions.https.onCall(
+    async (request) => await getAllCategories(request)
   ),
 };
