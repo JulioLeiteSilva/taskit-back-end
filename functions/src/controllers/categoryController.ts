@@ -1,9 +1,9 @@
 import * as functions from "firebase-functions";
 import { firestore } from "../config/firebaseConfig";
-import { categoryModel } from "../models/categoryModel";
+import { Category } from "../models/categoryModel";
 
 export const createCategory = async (
-  request: functions.https.CallableRequest<{ category: categoryModel }>
+  request: functions.https.CallableRequest<{ category: Category}>
 ) => {
   if (!request.auth) {
     throw new functions.https.HttpsError("unauthenticated", "O usuário não está autenticado");
@@ -35,7 +35,7 @@ export const createCategory = async (
     const newCategoryName = category.name.toLowerCase();
 
     // Verificar se a categoria já existe
-    if (userData.categories && userData.categories.some((c: categoryModel) => c.name.toLowerCase() === newCategoryName)) {
+    if (userData.categories && userData.categories.some((c: Category) => c.name.toLowerCase() === newCategoryName)) {
       throw new functions.https.HttpsError("already-exists", "Categoria já existente");
     }
 
@@ -86,7 +86,7 @@ export const deleteCategory = async (
 
     // Filtrar o array para remover a categoria com o nome especificado
     const updatedCategories = userData.categories.filter(
-      (category: categoryModel) => category.name !== categoryName
+      (category: Category) => category.name !== categoryName
     );
 
     // Verificar se a categoria existia

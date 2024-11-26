@@ -1,4 +1,5 @@
 import {Account} from "./accountModel";
+import { Category } from "./categoryModel";
 import {Task} from "./taskModel";
 
 export interface User {
@@ -7,6 +8,6 @@ export interface User {
   email: string;
   cell: string;
   accounts: Account[];// Lista de contas associadas ao usuário
-  categories: string[];// Lista de categorias personalizadas
+  categories: Category[];// Lista de categorias personalizadas
   tasks: Task[];// Lista de tarefas do usuário
 }
