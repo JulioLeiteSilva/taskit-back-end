@@ -290,12 +290,12 @@ export const updateIncome = async (
           ) {
             // Reverter o saldo do valor antigo, se pago
             if (oldincome.paid) {
-              totalBalanceAdjustment -= oldincome.value;
+              totalBalanceAdjustment += oldincome.value;
             }
 
             // Subtrair o novo valor, se pago
             if (income.paid) {
-              totalBalanceAdjustment += income.value;
+              totalBalanceAdjustment -= income.value;
             }
           }
 
