@@ -14,6 +14,43 @@ interface InternalDeleteExpense {
   expenseId: string;
 }
 
+const generateFixedExpenses = (
+  expense: Omit<Expense, "id">,
+  startDate: string
+): Expense[] => {
+  if (!startDate) {
+    throw new Error("Despesas fixas devem ter uma data de início válida.");
+  }
+
+  const currentDate = new Date();
+  const expenseDate = new Date(startDate);
+  const generatedExpenses: Expense[] = [];
+
+  let isFirst = true; // Flag para a primeira instância
+
+  while (
+    expenseDate.getFullYear() < currentDate.getFullYear() ||
+    (expenseDate.getFullYear() === currentDate.getFullYear() &&
+      expenseDate.getMonth() <= currentDate.getMonth())
+  ) {
+    generatedExpenses.push({
+      ...expense,
+      id: `${firestore.collection("users").doc().id}-${
+        expenseDate.getMonth() + 1
+      }-${expenseDate.getFullYear()}`,
+      date: `${expenseDate.getFullYear()}-${(expenseDate.getMonth() + 1)
+        .toString()
+        .padStart(2, "0")}-01`,
+      paid: isFirst ? expense.paid : false, // Apenas a primeira mantém o status original
+    });
+
+    isFirst = false; // As próximas instâncias terão `paid: false`
+    expenseDate.setMonth(expenseDate.getMonth() + 1);
+  }
+
+  return generatedExpenses;
+};
+
 export const createExpense = async (
   request:
     | functions.https.CallableRequest<InternalCreateExpense>
@@ -69,10 +106,21 @@ export const createExpense = async (
       );
     }
 
-    const newExpenses = expenseArray.map((expense) => ({
-      ...expense,
-      id: firestore.collection("users").doc().id,
-    }));
+    const newExpenses = expenseArray.flatMap((expense) => {
+      if (expense.fixed) {
+        if (!expense.startDate) {
+          throw new functions.https.HttpsError(
+            "invalid-argument",
+            "Despesas fixas devem ter uma data de início."
+          );
+        }
+        return generateFixedExpenses(expense, expense.startDate); // Gera instâncias para despesas fixas
+      }
+      return {
+        ...expense,
+        id: firestore.collection("users").doc().id,
+      };
+    });
 
     let totalPaidExpenses = 0; // Acumula o valor total das despesas pagas
     const updatedAccounts = userData.accounts.map((account: Account) => {
@@ -123,8 +171,10 @@ export const createExpense = async (
 
 export const deleteExpense = async (
   request:
-    | functions.https.CallableRequest<InternalDeleteExpense>
-    | InternalDeleteExpense, // Suporte para chamadas externas e internas
+    | functions.https.CallableRequest<
+        InternalDeleteExpense & { expenseIds?: string[] }
+      >
+    | (InternalDeleteExpense & { expenseIds?: string[] }), // Suporte para múltiplos IDs
   uidFromFunction?: string // UID opcional para chamadas internas
 ) => {
   const uid =
@@ -139,9 +189,10 @@ export const deleteExpense = async (
     );
   }
 
-  const { accountId, expenseId } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
+  const { accountId, expenseId, expenseIds } =
+    "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
 
-  if (!accountId || !expenseId) {
+  if (!accountId || (!expenseId && (!expenseIds || expenseIds.length === 0))) {
     throw new functions.https.HttpsError(
       "invalid-argument",
       "Dados inválidos fornecidos para exclusão de despesa"
@@ -167,36 +218,50 @@ export const deleteExpense = async (
       );
     }
 
+    let totalBalanceAdjustment = 0; // Para ajustar o saldo das contas
+
     const updatedAccounts = userData.accounts.map((account: Account) => {
       if (account.id === accountId) {
-        const expense = account.expenses.find(
-          (e: Expense) => e.id === expenseId
-        );
+        const idsToDelete = expenseIds || [expenseId]; // Suporte para múltiplos IDs ou único
 
-        if (!expense) {
-          throw new functions.https.HttpsError(
-            "not-found",
-            "Despesa não encontrada na conta"
-          );
-        }
+        const updatedExpenses = account.expenses.filter((expense: Expense) => {
+          if (idsToDelete.includes(expense.id)) {
+            // Atualiza o saldo, se necessário
+            if (expense.paid) {
+              totalBalanceAdjustment += expense.value; // Reverte o saldo
+            }
+            return false; // Exclui a despesa
+          }
+          return true; // Mantém a despesa
+        });
 
-        // Atualiza o saldo, se necessário
-        if (expense.paid) {
-          updateAccountBalance(uid, accountId, expense.value, "add");
-        }
-        // Remove a despesa do array
         return {
           ...account,
-          expenses: account.expenses.filter((e: Expense) => e.id !== expenseId),
+          expenses: updatedExpenses,
         };
       }
       return account; // Outras contas permanecem inalteradas
     });
 
+    // Verifica se a conta foi encontrada
+    if (!updatedAccounts.some((account: Account) => account.id === accountId)) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Conta especificada não encontrada"
+      );
+    }
+
     // Atualizar o Firestore
     await userDocRef.update({ accounts: updatedAccounts });
 
-    return { message: "Despesa removida com sucesso" };
+    // Atualizar o saldo no Firestore
+    if (totalBalanceAdjustment > 0) {
+      await updateAccountBalance(uid, accountId, totalBalanceAdjustment, "add");
+    }
+
+    return {
+      message: `Despesas removidas com sucesso: ${expenseIds || [expenseId]}`,
+    };
   } catch (error) {
     console.error("Erro ao remover despesa:", error);
     throw new functions.https.HttpsError(

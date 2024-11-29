@@ -14,6 +14,43 @@ interface InternalDeleteIncome {
   incomeId: string;
 }
 
+const generateFixedIncomes = (
+  income: Omit<Income, "id">,
+  startDate: string
+): Income[] => {
+  if (!startDate) {
+    throw new Error("Receitas fixas devem ter uma data de início válida.");
+  }
+
+  const currentDate = new Date();
+  const incomeDate = new Date(startDate);
+  const generatedIncomes: Income[] = [];
+
+  let isFirst = true; // Flag para a primeira instância
+
+  while (
+    incomeDate.getFullYear() < currentDate.getFullYear() ||
+    (incomeDate.getFullYear() === currentDate.getFullYear() &&
+      incomeDate.getMonth() <= currentDate.getMonth())
+  ) {
+    generatedIncomes.push({
+      ...income,
+      id: `${firestore.collection("users").doc().id}-${
+        incomeDate.getMonth() + 1
+      }-${incomeDate.getFullYear()}`,
+      date: `${incomeDate.getFullYear()}-${(incomeDate.getMonth() + 1)
+        .toString()
+        .padStart(2, "0")}-01`,
+      paid: isFirst ? income.paid : false, // Apenas a primeira mantém o status original
+    });
+
+    isFirst = false; // As próximas instâncias terão `paid: false`
+    incomeDate.setMonth(incomeDate.getMonth() + 1);
+  }
+
+  return generatedIncomes;
+};
+
 export const createIncome = async (
   request:
     | functions.https.CallableRequest<InternalCreateIncome>
@@ -21,9 +58,7 @@ export const createIncome = async (
   uidFromFunction?: string
 ) => {
   const uid =
-    "auth" in request && request.auth?.uid // Chamadas externas
-      ? request.auth.uid
-      : uidFromFunction; // Chamadas internas
+    "auth" in request && request.auth?.uid ? request.auth.uid : uidFromFunction;
 
   if (!uid) {
     throw new functions.https.HttpsError(
@@ -32,7 +67,7 @@ export const createIncome = async (
     );
   }
 
-  const { accountId, incomes } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
+  const { accountId, incomes } = "data" in request ? request.data : request;
 
   if (!accountId || !incomes) {
     throw new functions.https.HttpsError(
@@ -69,10 +104,22 @@ export const createIncome = async (
       );
     }
 
-    const newIncomes = incomeArray.map((income) => ({
-      ...income,
-      id: firestore.collection("users").doc().id,
-    }));
+    const newIncomes = incomeArray.flatMap((income) => {
+      if (income.fixed) {
+        if (!income.startDate) {
+          throw new functions.https.HttpsError(
+            "invalid-argument",
+            "Receitas fixas devem ter uma data de início."
+          );
+        }
+        return generateFixedIncomes(income, income.startDate);
+      }
+
+      return {
+        ...income,
+        id: firestore.collection("users").doc().id,
+      };
+    });
 
     let totalPaidIncomes = 0;
     const updatedAccounts = userData.accounts.map((account: Account) => {
@@ -121,14 +168,14 @@ export const createIncome = async (
 
 export const deleteIncome = async (
   request:
-    | functions.https.CallableRequest<InternalDeleteIncome>
-    | InternalDeleteIncome, // Suporte para chamadas externas e internas
-  uidFromFunction?: string // UID opcional para chamadas internas
+    | functions.https.CallableRequest<
+        InternalDeleteIncome & { incomeIds?: string[] }
+      >
+    | (InternalDeleteIncome & { incomeIds?: string[] }),
+  uidFromFunction?: string
 ) => {
   const uid =
-    "auth" in request && request.auth?.uid // Chamadas externas
-      ? request.auth.uid
-      : uidFromFunction; // Chamadas internas
+    "auth" in request && request.auth?.uid ? request.auth.uid : uidFromFunction;
 
   if (!uid) {
     throw new functions.https.HttpsError(
@@ -137,9 +184,10 @@ export const deleteIncome = async (
     );
   }
 
-  const { accountId, incomeId } = "data" in request ? request.data : request; // Verifica se é chamada externa ou interna
+  const { accountId, incomeId, incomeIds } =
+    "data" in request ? request.data : request;
 
-  if (!accountId || !incomeId) {
+  if (!accountId || (!incomeId && (!incomeIds || incomeIds.length === 0))) {
     throw new functions.https.HttpsError(
       "invalid-argument",
       "Dados inválidos fornecidos para exclusão de receita"
@@ -165,37 +213,51 @@ export const deleteIncome = async (
       );
     }
 
+    let totalBalanceAdjustment = 0;
+
     const updatedAccounts = userData.accounts.map((account: Account) => {
       if (account.id === accountId) {
-        const income = account.incomes.find(
-          (inc: Income) => inc.id === incomeId
-        );
+        const idsToDelete = incomeIds || [incomeId];
 
-        if (!income) {
-          throw new functions.https.HttpsError(
-            "not-found",
-            "Receita não encontrada na conta"
-          );
-        }
+        const updatedIncomes = account.incomes.filter((income: Income) => {
+          if (idsToDelete.includes(income.id)) {
+            if (income.paid) {
+              totalBalanceAdjustment -= income.value;
+            }
+            return false;
+          }
+          return true;
+        });
 
-        // Atualiza o saldo, se necessário
-        if (income.paid) {
-          updateAccountBalance(uid, accountId, income.value, "subtract");
-        }
-
-        // Remove a receita do array
         return {
           ...account,
-          incomes: account.incomes.filter((inc: Income) => inc.id !== incomeId),
+          incomes: updatedIncomes,
         };
       }
-      return account; // Outras contas permanecem inalteradas
+      return account;
     });
 
-    // Atualizar o Firestore
+    if (!updatedAccounts.some((account: Account) => account.id === accountId)) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Conta especificada não encontrada"
+      );
+    }
+
     await userDocRef.update({ accounts: updatedAccounts });
 
-    return { message: "Receita removida com sucesso" };
+    if (totalBalanceAdjustment !== 0) {
+      await updateAccountBalance(
+        uid,
+        accountId,
+        Math.abs(totalBalanceAdjustment),
+        "subtract"
+      );
+    }
+
+    return {
+      message: `Receitas removidas com sucesso: ${incomeIds || [incomeId]}`,
+    };
   } catch (error) {
     console.error("Erro ao remover receita:", error);
     throw new functions.https.HttpsError(

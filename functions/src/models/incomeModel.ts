@@ -4,6 +4,7 @@ export interface Income {
   category: string;
   value: number;
   date: string; // Ex: "10/10/2024"
-  fixed: boolean; // Se é uma receita fixa
+  fixed?: boolean;
+  startDate?: string; // Se é uma receita fixa
   paid: boolean;
 }

@@ -4,6 +4,7 @@ export interface Expense {
     category: string;
     value: number;
     date: string;// Ex: "30/10/2024"
-    fixed: boolean;// Se é uma despesa fixa
+    fixed?: boolean;// Se é uma despesa fixa
+    startDate?: string;
     paid: boolean;// Se a despesa foi paga
 }
