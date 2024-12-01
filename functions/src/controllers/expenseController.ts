@@ -22,17 +22,14 @@ const generateFixedExpenses = (
     throw new Error("Despesas fixas devem ter uma data de início válida.");
   }
 
-  const currentDate = new Date();
   const expenseDate = new Date(startDate);
   const generatedExpenses: Expense[] = [];
 
   let isFirst = true; // Flag para a primeira instância
 
-  while (
-    expenseDate.getFullYear() < currentDate.getFullYear() ||
-    (expenseDate.getFullYear() === currentDate.getFullYear() &&
-      expenseDate.getMonth() <= currentDate.getMonth())
-  ) {
+  // Garantir que gere despesas para os próximos 12 meses
+  for (let i = 0; i < 12; i++) {
+    // Adiciona despesa com o mesmo dia original
     generatedExpenses.push({
       ...expense,
       id: `${firestore.collection("users").doc().id}-${
@@ -40,11 +37,16 @@ const generateFixedExpenses = (
       }-${expenseDate.getFullYear()}`,
       date: `${expenseDate.getFullYear()}-${(expenseDate.getMonth() + 1)
         .toString()
-        .padStart(2, "0")}-01`,
+        .padStart(2, "0")}-${expenseDate
+        .getDate()
+        .toString()
+        .padStart(2, "0")}`,
       paid: isFirst ? expense.paid : false, // Apenas a primeira mantém o status original
     });
 
-    isFirst = false; // As próximas instâncias terão `paid: false`
+    isFirst = false; // Todas as próximas instâncias terão `paid: false`
+
+    // Incrementa para o próximo mês
     expenseDate.setMonth(expenseDate.getMonth() + 1);
   }
 

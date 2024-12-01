@@ -22,17 +22,13 @@ const generateFixedIncomes = (
     throw new Error("Receitas fixas devem ter uma data de início válida.");
   }
 
-  const currentDate = new Date();
   const incomeDate = new Date(startDate);
   const generatedIncomes: Income[] = [];
 
   let isFirst = true; // Flag para a primeira instância
 
-  while (
-    incomeDate.getFullYear() < currentDate.getFullYear() ||
-    (incomeDate.getFullYear() === currentDate.getFullYear() &&
-      incomeDate.getMonth() <= currentDate.getMonth())
-  ) {
+  for (let i = 0; i < 12; i++) {
+    // Adiciona despesa com o mesmo dia original
     generatedIncomes.push({
       ...income,
       id: `${firestore.collection("users").doc().id}-${
@@ -40,11 +36,13 @@ const generateFixedIncomes = (
       }-${incomeDate.getFullYear()}`,
       date: `${incomeDate.getFullYear()}-${(incomeDate.getMonth() + 1)
         .toString()
-        .padStart(2, "0")}-01`,
+        .padStart(2, "0")}-${incomeDate.getDate().toString().padStart(2, "0")}`,
       paid: isFirst ? income.paid : false, // Apenas a primeira mantém o status original
     });
 
-    isFirst = false; // As próximas instâncias terão `paid: false`
+    isFirst = false; // Todas as próximas instâncias terão `paid: false`
+
+    // Incrementa para o próximo mês
     incomeDate.setMonth(incomeDate.getMonth() + 1);
   }
 
