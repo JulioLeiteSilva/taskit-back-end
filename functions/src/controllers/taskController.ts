@@ -378,7 +378,7 @@ export const toggleTaskStatus = async (
 export const toggleSubTaskStatus = async (
   request: functions.https.CallableRequest<{
     taskId: string;
-    subTaskTitle: string;
+    subTaskTitles: string[]; // Alterado para um array de títulos
   }>
 ) => {
   if (!request.auth) {
@@ -389,12 +389,12 @@ export const toggleSubTaskStatus = async (
   }
 
   const uid = request.auth.uid;
-  const { taskId, subTaskTitle } = request.data;
+  const { taskId, subTaskTitles } = request.data;
 
-  if (!taskId || !subTaskTitle) {
+  if (!taskId || !subTaskTitles || subTaskTitles.length === 0) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "O ID da tarefa ou o título da subtarefa não foram fornecidos"
+      "O ID da tarefa ou os títulos das subtarefas não foram fornecidos"
     );
   }
 
@@ -420,8 +420,8 @@ export const toggleSubTaskStatus = async (
     const updatedTasks = userData.tasks.map((task: Task) => {
       if (task.id === taskId) {
         const updatedSubTasks = task.subTask.map((subTask: SubTask) => {
-          if (subTask.title === subTaskTitle) {
-            return { ...subTask, done: !subTask.done }; // Alterna o status da subtarefa
+          if (subTaskTitles.includes(subTask.title)) {
+            return { ...subTask, done: !subTask.done }; // Alterna o status das subtarefas especificadas
           }
           return subTask;
         });
@@ -434,15 +434,15 @@ export const toggleSubTaskStatus = async (
     await userDocRef.update({ tasks: updatedTasks });
 
     return {
-      message: "Status da subtarefa alternado com sucesso",
+      message: "Status das subtarefas alternado com sucesso",
       taskId,
-      subTaskTitle,
+      subTaskTitles,
     };
   } catch (error) {
-    console.error("Erro ao alternar o status da subtarefa:", error);
+    console.error("Erro ao alternar o status das subtarefas:", error);
     throw new functions.https.HttpsError(
       "internal",
-      "Erro ao alternar o status da subtarefa",
+      "Erro ao alternar o status das subtarefas",
       error
     );
   }
